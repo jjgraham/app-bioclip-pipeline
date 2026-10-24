@@ -1,0 +1,15 @@
+{
+  "name": "iron-horse-pest-detector",
+  "node": "H02A",
+  "plugins": [
+    {
+      "name": "bioclip-pipeline",
+      "image": "yourregistryusername/iron-horse-bioclip:latest",
+      "args": [],
+      "privileged": true,
+      "env": {
+        "CAMERA_RTSP_URL": "rtsp://<camera-local-ip-on-node>:554/s0"
+      }
+    }
+  ]
+}
