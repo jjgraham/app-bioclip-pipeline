@@ -1,0 +1,12 @@
+{
+  "name": "bioclip-pipeline-job",
+  "node": "H02A",
+  "plugins": [
+    {
+      "name": "bioclip-pipeline",
+      "image": "yourusername/app-bioclip-pipeline:latest",
+      "args": [],
+      "privileged": true
+    }
+  ]
+}
