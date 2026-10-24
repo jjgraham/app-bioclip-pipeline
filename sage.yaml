@@ -9,3 +9,4 @@ homepage: "https://github.com/jjgraham/app-bioclip-pipeline/blob/main/README.md"
 source:
   architectures:
     - "linux/arm64"
+    - "linux/amd64"
