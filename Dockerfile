@@ -2,13 +2,15 @@ FROM nvcr.io/nvidia/pytorch:23.10-py3
 
 WORKDIR /workspace
 
-# Install system dependencies for OpenCV image processing
+# Install system dependencies for OpenCV core operations
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    wget \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install specific ML pipeline frameworks
+# Install modern orchestration libraries & pipelines
 RUN pip install --no-cache-dir \
     flask \
     ultralytics \
@@ -16,7 +18,7 @@ RUN pip install --no-cache-dir \
     pybioclip \
     pywaggle
 
-# Pre-download weights inside the container layer to speed up node initialization
+# Pull the dense SAM checkpoint directly into build caching
 RUN wget https://fbaipublicfiles.com
 
 COPY app.py /workspace/app.py
