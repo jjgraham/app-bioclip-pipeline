@@ -1,123 +1,102 @@
 import os
 import cv2
+import time
+import threading
 import numpy as np
 from flask import Flask, request, jsonify
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
 from bioclip.predict import TreeOfLifeClassifier
 from bioclip import Rank
-from pywaggle import Waggle  # Standard Sage data publishing library
+from pywaggle import Waggle
 
 app = Flask(__name__)
 
-# --- 1. Initialize Models ---
-print("Loading YOLOv8 model...")
-yolo_model = YOLO("yolov8x.pt")  # High-accuracy YOLO for 4K detection bounding boxes
-
-print("Loading SAM (Segment Anything Model)...")
-sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
-sam.to(device="cuda")
+# --- Model Initialization ---
+yolo_model = YOLO("yolov8x.pt")
+sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth").to(device="cuda")
 sam_predictor = SamPredictor(sam)
-
-print("Loading BioCLIP...")
 classifier = TreeOfLifeClassifier()
 
-# --- 2. Configure PyBioCLIP Plausible Taxa Subset ---
-# Define the subset of taxa relevant to the H02A site (e.g., California Vineyard ecosystem)
-PLAUSIBLE_TAXA = {
-    Rank.CLASS: ["Aves", "Mammalia", "Insecta"],
-    Rank.ORDER: ["Squamata", "Rodentia", "Passeriformes", "Lepidoptera"],
-    Rank.FAMILY: ["Cervidae", "Canidae", "Leporidae", "Vitaceae"]
-}
-
-print("Generating BioCLIP Tree-of-Life taxonomic subset filters...")
-# Combine filters into a single boolean mask to restrict the Tree of Life embeddings
+# Apply the Plausible Taxa filter (using the dictionary from Section 2)
 combined_filter = None
 for rank, names in PLAUSIBLE_TAXA.items():
     for name in names:
         try:
-            # Generate the filter for specific valid TOL values
             taxa_mask = classifier.create_taxa_filter(rank=rank, value=name)
-            if combined_filter is None:
-                combined_filter = taxa_mask
-            else:
-                combined_filter = np.logical_or(combined_filter, taxa_mask)
+            combined_filter = taxa_mask if combined_filter is None else np.logical_or(combined_filter, taxa_mask)
         except ValueError:
-            print(f"Warning: Taxon '{name}' at rank '{rank}' not found in TOL labels.")
-
+            pass
 if combined_filter is not None:
-    # Limit model predictions exclusively to this subset array
     classifier.apply_filter(combined_filter)
-    print("Successfully restricted BioCLIP predictions to plausible local taxa subset.")
 
-# --- 3. Webhook Endpoint for UVC-AI-Pro ---
-@app.route("/webhook/smart-detection", methods=["POST"])
-def handle_detection():
-    # Handle incoming multi-part image or JSON payload from the camera
-    if "image" not in request.files:
-        return jsonify({"error": "No image data found in webhook payload"}), 400
-        
-    file = request.files["image"]
-    image_bytes = file.read()
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR) # 4K base image matrix
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    # Step A: YOLOv8 Bounding Box Generation
-    yolo_results = yolo_model(img)
+# --- Shared Core Logic for Inference ---
+def process_frame(img_bgr, detection_source="webhook"):
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    h, w, _ = img_bgr.shape
     
-    detections = []
+    # If polling the lure, crop specifically to the foreground area to save compute
+    if detection_source == "lure_polling":
+        # Example: Focus on the center-bottom 30% of the screen where the lure hangs
+        img_rgb = img_rgb[int(h*0.5):int(h*0.9), int(w*0.3):int(w*0.7)]
+    
+    yolo_results = yolo_model(img_rgb, verbose=False)
+    
     for result in yolo_results:
         for box in result.boxes:
-            # Extract box coordinates (xyxy)
-            xyxy = box.xyxy[0].cpu().numpy().astype(int)
-            conf = float(box.conf[0].cpu().numpy())
+            xyxy = box.xyxy.cpu().numpy().astype(int)[0]
+            conf = float(box.conf.cpu().numpy()[0])
             
-            # Step B: SAM High-Precision Segment Masking
+            # Segment and Isolate via SAM
             sam_predictor.set_image(img_rgb)
-            masks, scores, _ = sam_predictor.predict(
-                box=xyxy,
-                multimask_output=False
-            )
-            mask = masks[0]
+            masks, _, _ = sam_predictor.predict(box=xyxy, multimask_output=False)
             
-            # Isolate the detected object using the SAM mask mask
-            isolated_obj = img_rgb.copy()
-            isolated_obj[~mask] = 0 # Black out the background
-            
-            # Crop to bounding box to reduce BioCLIP frame canvas size
+            isolated = img_rgb.copy()
+            isolated[~masks[0]] = 0
             x1, y1, x2, y2 = xyxy
-            cropped_obj = isolated_obj[y1:y2, x1:x2]
+            crop = isolated[y1:y2, x1:x2]
             
-            # Save crop temporarily or pass directly as a temporary image file
-            temp_path = "/tmp/crop.jpg"
-            cv2.imwrite(temp_path, cv2.cvtColor(cropped_obj, cv2.COLOR_RGB2BGR))
-
-            # Step C: Subset-Constrained BioCLIP Classification
-            # Predicts over the restricted Tree of Life hierarchy defined above
+            temp_path = f"/tmp/{detection_source}_crop.jpg"
+            cv2.imwrite(temp_path, cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
+            
+            # Subsetting-limited BioCLIP classification
             predictions = classifier.predict_image(temp_path)
-            
-            # Parse top BioCLIP predictions
-            top_prediction = predictions[0] if predictions else {}
-            
-            detections.append({
-                "bbox": xyxy.tolist(),
-                "yolo_conf": conf,
-                "taxon": top_prediction.get("species", top_prediction.get("genus", "Unknown")),
-                "common_name": top_prediction.get("common_name", "Unknown"),
-                "bioclip_score": float(top_prediction.get("score", 0.0))
-            })
-            
-            # --- 4. Publish metrics to Sage Continuum Node Stream ---
-            with Waggle() as waggle:
-                # Log the prediction details out to the time-series stream
-                waggle.plugin.publish("env.bioclip.detection", top_prediction.get("species", "Unknown"), meta={
-                    "common_name": top_prediction.get("common_name", "Unknown"),
-                    "confidence": str(top_prediction.get("score", 0.0))
-                })
+            if predictions:
+                taxon = predictions.get("species", predictions.get("family", "Unknown"))
+                score = float(predictions.get("score", 0.0))
+                
+                # Publish to Sage Continuum telemetry stream
+                with Waggle() as waggle:
+                    waggle.plugin.publish("vineyard.bioclip.detection", taxon, meta={
+                        "source": detection_source,
+                        "common_name": predictions.get("common_name", "Unknown"),
+                        "confidence": str(score)
+                    })
 
-    return jsonify({"status": "success", "processed_detections": detections}), 200
+# --- Stream A: Native Webhook Listener (Background Macro Wildlife) ---
+@app.route("/webhook/smart-detection", methods=["POST"])
+def handle_webhook():
+    if "image" in request.files:
+        file = request.files["image"]
+        nparr = np.frombuffer(file.read(), np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        threading.Thread(target=process_frame, args=(img, "webhook")).start()
+    return jsonify({"status": "queued"}), 200
+
+# --- Stream B: Foreground Lure Polking Thread (Macro Insects) ---
+def rtsp_lure_poller(rtsp_url):
+    while True:
+        cap = cv2.VideoCapture(rtsp_url)
+        ret, frame = cap.read()
+        cap.release()
+        if ret:
+            try:
+                process_frame(frame, detection_source="lure_polling")
+            except Exception as e:
+                print(f"Error processing lure frame: {e}")
+        time.sleep(3) # Poll the wintergreen trap every 3 seconds
 
 if __name__ == "__main__":
-    # Internal edge app deployment port
+    RTSP_URL = os.getenv("CAMERA_RTSP_URL", "rtsp://192.168.1.X:554/live/stream_ch1")
+    threading.Thread(target=rtsp_lure_poller, args=(RTSP_URL,), daemon=True).start()
     app.run(host="0.0.0.0", port=5000)
