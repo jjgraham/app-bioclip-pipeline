@@ -11,19 +11,18 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install modern SAM 3.1 dependencies, including the huggingface_hub tool
+# Install ML pipeline dependencies
 RUN pip install --no-cache-dir \
     flask \
     ultralytics \
-    git+https://github.com/facebookresearch/sam3.git \
+    git+https://github.com/facebookresearch/segment-anything.git \
     pybioclip \
     pywaggle \
-    timm \
-    huggingface_hub
+    timm
 
-# Download the SAM 3.1 official weights locally using the correct Hugging Face repository
-# (Saves to /workspace/sam3_b.safetensors)
-RUN huggingface-cli download 1038lab/sam3 sam3.safetensors --local-dir /workspace --local-dir-use-symlinks False
+# Pre-download official SAM ViT-H and YOLOv8x checkpoints into container layer
+RUN wget -q https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth -O /workspace/sam_vit_h_4b8939.pth && \
+    wget -q https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8x.pt -O /workspace/yolov8x.pt
 
 COPY app.py /workspace/app.py
 

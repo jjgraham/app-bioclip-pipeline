@@ -70,15 +70,15 @@ def process_frame(img_bgr, detection_source="webhook"):
     
     for result in yolo_results:
         for box in result.boxes:
-            xyxy = box.xyxy.cpu().numpy().astype(int)
-            conf = float(box.conf.cpu().numpy())
+            xyxy = box.xyxy[0].cpu().numpy().astype(int)
+            conf = float(box.conf[0].cpu().numpy())
             
             # Isolate via SAM
             sam_predictor.set_image(img_rgb)
             masks, _, _ = sam_predictor.predict(box=xyxy, multimask_output=False)
             
             isolated = img_rgb.copy()
-            isolated[~masks] = 0
+            isolated[~masks[0]] = 0
             x1, y1, x2, y2 = xyxy
             crop = isolated[y1:y2, x1:x2]
             
