@@ -1,10 +1,20 @@
-name: bioclip-pipeline-deployment
-plugins:
-  - name: app-bioclip-pipeline
-    pluginSpec:
-      image: registry.sagecontinuum.org/sagecontinuum/app-bioclip-pipeline:latest
-      # Add any args required by your app's sage.yaml configuration here if needed
+name: "bioclip-pipeline-deployment"
+description: "Yolo -> SAM -> BioClip with pybioclip subset feature"
+keywords: "IHV, BioClip, Yolo, SAM"
+authors: "John Graham <jjgraham@ucsd.edu>"
+collaborators: ""
+funding: ""
+license: ""
+homepage: "https://github.com/jjgraham/app-bioclip-pipeline/blob/main/README.md"
+source:
+  architectures:
+    - "linux/arm64"
+
 nodes:
   H02A:
     scienceRules:
       - 'true'
+plugins:
+  - name: app-bioclip-pipeline
+    pluginSpec:
+      image: registry.sagecontinuum.org/sagecontinuum/app-bioclip-pipeline:latest
