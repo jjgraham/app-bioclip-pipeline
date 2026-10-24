@@ -1,0 +1,13 @@
+name: iron-horse-pest-detector
+plugins:
+  - name: bioclip-pipeline
+    pluginSpec:
+      image: registry.sagecontinuum.org/jjgraham/bioclip-pipeline-deployment
+      args: []
+      privileged: true
+      env: "CAMERA_RTSP_URL": "rtsps://192.168.1.1:7441/P4KO1V9X46AyDtTp?enableSrtp"
+      nodes: H02A
+scienceRules:
+successCriteria:
+  - WallClock(1d)
+
