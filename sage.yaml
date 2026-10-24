@@ -10,10 +10,6 @@ source:
   architectures:
     - "linux/arm64"
 
-nodes:
-  H02A:
-    scienceRules:
-      - 'true'
 plugins:
   - name: app-bioclip-pipeline
     pluginSpec:
