@@ -9,8 +9,3 @@ homepage: "https://github.com/jjgraham/app-bioclip-pipeline/blob/main/README.md"
 source:
   architectures:
     - "linux/arm64"
-
-plugins:
-  - name: app-bioclip-pipeline
-    pluginSpec:
-      image: registry.sagecontinuum.org/sagecontinuum/app-bioclip-pipeline:latest
