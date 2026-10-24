@@ -4,11 +4,11 @@
   "plugins": [
     {
       "name": "bioclip-pipeline",
-      "image": "yourregistryusername/iron-horse-bioclip:latest",
+      "image": "gitlab-registry.nrp-nautilus.io/sagecontinuum/app-bioclip-pipeline",
       "args": [],
       "privileged": true,
       "env": {
-        "CAMERA_RTSP_URL": "rtsp://<camera-local-ip-on-node>:554/s0"
+        "CAMERA_RTSP_URL": "rtsps://192.168.1.1:7441/P4KO1V9X46AyDtTp?enableSrtp"
       }
     }
   ]
