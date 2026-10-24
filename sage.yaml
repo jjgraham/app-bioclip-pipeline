@@ -1,0 +1,10 @@
+name: bioclip-pipeline-deployment
+plugins:
+  - name: app-bioclip-pipeline
+    pluginSpec:
+      image: registry.sagecontinuum.org/sagecontinuum/app-bioclip-pipeline:latest
+      # Add any args required by your app's sage.yaml configuration here if needed
+nodes:
+  H02A:
+    scienceRules:
+      - 'true'
